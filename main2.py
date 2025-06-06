@@ -1,40 +1,26 @@
-from pymeasure.instruments.keithley import Keithley2450
-import pyvisa
-import time
+cat > keithley_idn.py << 'EOF'
+#!/usr/bin/env python3
+import sys
 
-# Force use of pyvisa-py backend
-rm = pyvisa.ResourceManager('@py')
+# Open the USBTMC device
+try:
+    smu = open("/dev/usbtmc0", "rb+", buffering=0)
+except Exception as e:
+    print("ERROR opening /dev/usbtmc0:", e)
+    sys.exit(1)
 
-# Get VISA address
-resources = rm.list_resources()
-if not resources:
-    raise RuntimeError("No VISA devices found.")
+def write(cmd):
+    # Append newline and send
+    smu.write((cmd + "\n").encode())
 
-print("Connected devices:", resources)
-keithley = Keithley2450(rm.open_resource(resources[0]))
+def query(cmd):
+    write(cmd)
+    return smu.read(1024).decode().strip()
 
-# Clear and identify
-print("ID:", keithley.id)
+# Send *IDN? and print response
+idn = query("*IDN?")
+print("Instrument ID:", idn)
 
-# Configure source/measure
-keithley.reset()
-keithley.use_front_terminals()  # Optional: ensure correct terminals
-
-# Source voltage mode
-keithley.source_mode = "voltage"
-keithley.voltage = 1.5          # Set output voltage to 1.5 V
-keithley.compliance_current = 0.01  # 10 mA limit
-keithley.enable_output()
-
-# Wait to stabilize
-time.sleep(1)
-
-# Measure
-v = keithley.voltage
-i = keithley.current
-print(f"Measured Voltage: {v:.6f} V")
-print(f"Measured Current: {i:.6f} A")
-
-# Disable output
-keithley.disable_output()
-keithley.shutdown()
+# Close file
+smu.close()
+EOF
