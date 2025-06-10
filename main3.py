@@ -361,102 +361,143 @@ def log_step_data(step, start_time, voltage, action, start_temp, end_temp,
 def main():
     print("Initializing hardware and simulation...")
     
-    # Set number of steps (can be changed before running)
-    set_simulation_steps(100)  # Set to None for infinite operation
-    
-    # Initialize temperature sensor
-    global device_file
-    device_file = setup_temperature_sensor()
-    
-    # Initialize Keithley
-    keithley = None
     try:
-        keithley = usbtmc.Instrument(KEITHLEY_VENDOR_ID, KEITHLEY_PRODUCT_ID)
-        keithley.timeout = 2000
-        print(f"Keithley instrument connected (VID: {hex(KEITHLEY_VENDOR_ID)}, PID: {hex(KEITHLEY_PRODUCT_ID)}).")
+        # Set number of steps (can be changed before running)
+        set_simulation_steps(100)  # Set to None for infinite operation
+        print("Step count initialized")
         
-        # Initialize instrument
-        keithley.write("*RST")
-        keithley.write(":OUTP OFF")
-        keithley.write(":SOUR:VOLT 0")
-        keithley.write(":SENS:VOLT:PROT 5")
-        keithley.write(":SENS:CURR:PROT 1")
-            
-    except Exception as e:
-        print(f"Error initializing Keithley: {e}")
-        sys.exit(1)
-
-    # Initialize simulation
-    field = TemperatureField.linear(size=100, base=20, grad_x=1, grad_y=0)
-    initial_state = RobotState(x=10.0, y=10.0, heading=0.0)
-    robot = Robot(state=initial_state, step_length=1, arc_angle_degrees=1, turn_angle=45)
-    
-    # Initialize PID controller
-    global pid
-    pid = PID(Kp=PID_KP, Ki=PID_KI, Kd=PID_KD)
-    pid.output_limits = PID_OUTPUT_LIMITS
-    pid.setpoint = field.temperature(robot.state.x, robot.state.y)
-    
-    print("Simulation initialized.")
-
-    # Create and start threads
-    threads = []
-    try:
-        # Start voltage measurement thread
-        voltage_thread = threading.Thread(
-            target=voltage_measurement_thread,
-            args=(keithley, stop_event)
-        )
-        threads.append(voltage_thread)
-        voltage_thread.start()
-
-        # Start temperature control thread
-        temp_thread = threading.Thread(
-            target=temperature_control_thread,
-            args=(keithley, stop_event)
-        )
-        threads.append(temp_thread)
-        temp_thread.start()
-
-        # Run main control loop
-        main_control_loop(keithley, robot, field, stop_event)
-
-    except KeyboardInterrupt:
-        print("\nProgram interrupted by user.")
-        stop_event.set()
-    except Exception as e:
-        print(f"Fatal error in main program: {e}")
-        stop_event.set()
-    finally:
-        # Wait for threads to finish
-        for thread in threads:
-            thread.join(timeout=5.0)
-
-        # Cleanup
-        print("Cleaning up...")
+        # Initialize temperature sensor
+        global device_file
         try:
-            if keithley is not None:
-                keithley.write(":OUTP OFF")
-                print("Keithley output turned off.")
+            device_file = setup_temperature_sensor()
+            print("Temperature sensor initialized")
         except Exception as e:
-            print(f"Error during cleanup: {e}")
-
-        # Save logged data
-        if log_data:
+            print(f"Error initializing temperature sensor: {e}")
+            sys.exit(1)
+        
+        # Initialize Keithley
+        keithley = None
+        try:
+            print("Attempting to connect to Keithley instrument...")
+            keithley = usbtmc.Instrument(KEITHLEY_VENDOR_ID, KEITHLEY_PRODUCT_ID)
+            keithley.timeout = 2000
+            print(f"Keithley instrument connected (VID: {hex(KEITHLEY_VENDOR_ID)}, PID: {hex(KEITHLEY_PRODUCT_ID)}).")
+            
+            # Test communication with Keithley
+            print("Testing Keithley communication...")
             try:
-                log_df = pd.DataFrame(log_data)
-                timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-                filename = f"robot_simulation_log_usbtmc_{timestamp_str}.csv"
-                log_df.to_csv(filename, index=False)
-                print(f"Data saved to {filename}")
+                idn = keithley.ask("*IDN?")
+                print(f"Instrument Identification: {idn.strip()}")
             except Exception as e:
-                print(f"Error saving log data: {e}")
-        else:
-            print("No data to save.")
+                print(f"Warning: Could not query instrument ID: {e}")
+            
+            # Initialize instrument
+            print("Initializing Keithley settings...")
+            keithley.write("*RST")
+            keithley.write(":OUTP OFF")
+            keithley.write(":SOUR:VOLT 0")
+            keithley.write(":SENS:VOLT:PROT 5")
+            keithley.write(":SENS:CURR:PROT 1")
+            print("Keithley settings initialized")
+                
+        except Exception as e:
+            print(f"Error initializing Keithley: {e}")
+            sys.exit(1)
 
-        print("Program finished.")
+        # Initialize simulation
+        print("Initializing simulation...")
+        try:
+            field = TemperatureField.linear(size=100, base=20, grad_x=1, grad_y=0)
+            initial_state = RobotState(x=10.0, y=10.0, heading=0.0)
+            robot = Robot(state=initial_state, step_length=1, arc_angle_degrees=1, turn_angle=45)
+            print("Robot and field initialized")
+        except Exception as e:
+            print(f"Error initializing simulation: {e}")
+            sys.exit(1)
+        
+        # Initialize PID controller
+        print("Initializing PID controller...")
+        try:
+            global pid
+            pid = PID(Kp=PID_KP, Ki=PID_KI, Kd=PID_KD)
+            pid.output_limits = PID_OUTPUT_LIMITS
+            pid.setpoint = field.temperature(robot.state.x, robot.state.y)
+            print("PID controller initialized")
+        except Exception as e:
+            print(f"Error initializing PID controller: {e}")
+            sys.exit(1)
+        
+        print("All systems initialized successfully.")
+        print("Starting main control loop...")
+
+        # Create and start threads
+        threads = []
+        try:
+            # Start voltage measurement thread
+            print("Starting voltage measurement thread...")
+            voltage_thread = threading.Thread(
+                target=voltage_measurement_thread,
+                args=(keithley, stop_event)
+            )
+            threads.append(voltage_thread)
+            voltage_thread.start()
+            print("Voltage measurement thread started")
+
+            # Start temperature control thread
+            print("Starting temperature control thread...")
+            temp_thread = threading.Thread(
+                target=temperature_control_thread,
+                args=(keithley, stop_event)
+            )
+            threads.append(temp_thread)
+            temp_thread.start()
+            print("Temperature control thread started")
+
+            # Run main control loop
+            print("Entering main control loop...")
+            main_control_loop(keithley, robot, field, stop_event)
+
+        except KeyboardInterrupt:
+            print("\nProgram interrupted by user.")
+            stop_event.set()
+        except Exception as e:
+            print(f"Fatal error in main program: {e}")
+            stop_event.set()
+        finally:
+            # Wait for threads to finish
+            print("Waiting for threads to finish...")
+            for thread in threads:
+                thread.join(timeout=5.0)
+
+            # Cleanup
+            print("Cleaning up...")
+            try:
+                if keithley is not None:
+                    keithley.write(":OUTP OFF")
+                    print("Keithley output turned off.")
+            except Exception as e:
+                print(f"Error during cleanup: {e}")
+
+            # Save logged data
+            if log_data:
+                try:
+                    log_df = pd.DataFrame(log_data)
+                    timestamp_str = time.strftime("%Y%m%d_%H%M%S")
+                    filename = f"robot_simulation_log_usbtmc_{timestamp_str}.csv"
+                    log_df.to_csv(filename, index=False)
+                    print(f"Data saved to {filename}")
+                except Exception as e:
+                    print(f"Error saving log data: {e}")
+            else:
+                print("No data to save.")
+
+            print("Program finished.")
+    except Exception as e:
+        print(f"Critical error in main program: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
+
 
 
