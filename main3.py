@@ -61,7 +61,7 @@ PID_SAMPLE_TIME = 0.5  # PID control loop sample time in seconds
 PID_KP = 1.2  # Proportional gain
 PID_KI = 0.01  # Integral gain
 PID_KD = 0.005  # Derivative gain
-PID_OUTPUT_LIMITS = (0, 5)  # Output voltage limits for the heater
+PID_OUTPUT_LIMITS = (0, 0.5)  # Output voltage limits for the heater
 
 # Thread-safe data structures
 voltage_queue = queue.Queue()  # Queue for voltage measurements
