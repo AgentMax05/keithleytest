@@ -128,6 +128,9 @@ class Robot:
 def voltage_measurement_thread(keithley, stop_event):
     """Continuously measures voltage and detects threshold crossings."""
     global last_action
+    consecutive_errors = 0
+    max_consecutive_errors = 3
+    
     try:
         while not stop_event.is_set():
             try:
@@ -136,6 +139,9 @@ def voltage_measurement_thread(keithley, stop_event):
                 voltage = float(keithley.ask(":MEAS:VOLT?"))
                 voltage_queue.put(voltage)
                 
+                # Reset error counter on successful read
+                consecutive_errors = 0
+                
                 # Check for threshold crossing
                 current_action = 1 if voltage > ACTION_VOLTAGE_THRESHOLD else 0
                 if last_action is not None and current_action != last_action:
@@ -143,17 +149,33 @@ def voltage_measurement_thread(keithley, stop_event):
                 last_action = current_action
                 
                 time.sleep(0.01)  # Minimal delay
-            except UsbtmcException as e:
-                print(f"Error reading voltage: {e}")
-                try:
-                    keithley.write("*RST")
-                    keithley.write(":OUTP OFF")
-                except:
-                    pass
-                time.sleep(0.5)
+                
+            except (UsbtmcException, IOError) as e:
+                consecutive_errors += 1
+                print(f"Error reading voltage (attempt {consecutive_errors}/{max_consecutive_errors}): {e}")
+                
+                if consecutive_errors >= max_consecutive_errors:
+                    print("Too many consecutive errors. Attempting to reconnect...")
+                    try:
+                        # Try to reset the connection
+                        keithley.write("*RST")
+                        keithley.write(":OUTP OFF")
+                        time.sleep(1)  # Give it time to reset
+                        
+                        # Test the connection
+                        keithley.ask("*IDN?")
+                        print("Successfully reconnected to Keithley")
+                        consecutive_errors = 0
+                    except Exception as reconnect_error:
+                        print(f"Failed to reconnect: {reconnect_error}")
+                        time.sleep(2)  # Longer delay before next attempt
+                else:
+                    time.sleep(0.5)  # Short delay before retry
+                    
             except Exception as e:
                 print(f"Unexpected error in voltage measurement: {e}")
                 time.sleep(0.5)
+                
     except Exception as e:
         print(f"Fatal error in voltage measurement thread: {e}")
 
@@ -203,6 +225,7 @@ def main_control_loop(keithley, robot, field, stop_event):
     step = 0
     start_time_of_step = time.time()
     start_simulated_temperature = field.temperature(robot.state.x, robot.state.y)
+    last_voltage = 0.0  # Keep track of last valid voltage reading
 
     try:
         while not stop_event.is_set():
@@ -216,13 +239,16 @@ def main_control_loop(keithley, robot, field, stop_event):
                 print(f"Step triggered by: {'Threshold crossing' if threshold_crossed else 'Time interval'}")
 
                 # Get voltage and determine action
+                voltage = last_voltage  # Default to last valid reading
                 if not voltage_queue.empty():
-                    voltage = voltage_queue.get()
-                    current_action = 1 if voltage > ACTION_VOLTAGE_THRESHOLD else 0
-                    print(f"Measured voltage: {voltage:.4f} V -> Action: {'arc' if current_action == 1 else 'turn and arc'}")
-                else:
-                    print("No voltage measurement available")
-                    continue
+                    try:
+                        voltage = voltage_queue.get()
+                        last_voltage = voltage  # Update last valid reading
+                    except queue.Empty:
+                        print("Warning: Using last valid voltage reading")
+                
+                current_action = 1 if voltage > ACTION_VOLTAGE_THRESHOLD else 0
+                print(f"Measured voltage: {voltage:.4f} V -> Action: {'arc' if current_action == 1 else 'turn and arc'}")
 
                 # Record initial state and temperature BEFORE movement
                 start_pos_x, start_pos_y = robot.state.x, robot.state.y
@@ -432,4 +458,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
