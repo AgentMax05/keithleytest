@@ -146,8 +146,8 @@ except Exception as e: # Catch other potential initialization errors
 # -------------------------------------------------
 print("Initializing simulation...")
 # Create instances of your simulation objects
-field = TemperatureField.linear(size=100000, base=100, grad_x=1, grad_y=0) # Adjust parameters as needed
-initial_state = RobotState(x=50000.0, y=50000.0, heading=0.0) # Set initial state
+field = TemperatureField.linear(size=100, base=20, grad_x=1, grad_y=0) # Adjust parameters as needed
+initial_state = RobotState(x=10.0, y=10.0, heading=0.0) # Set initial state
 robot = Robot(state=initial_state, step_length=1, arc_angle_degrees=1, turn_angle=45) # Set robot parameters
 
 print("Simulation initialized.")
