@@ -1,0 +1,6 @@
+The system establishes a closed-loop interaction between a physical robot, a simulated environment, and a physical heater, orchestrated by a Raspberry Pi.
+
+Physical Robot Action Output: The physical robot performs an action, either "arc" or "turn and arc". This action is communicated as a voltage signal measured by a Keithley 2450 connected to the Raspberry Pi via USB (using the usbtmc protocol).
+Raspberry Pi Receives Action: The Raspberry Pi reads the voltage from the Keithley to interpret the robot's chosen action.
+Raspberry Pi Updates Simulation: The Raspberry Pi uses the received action to update the robot's position and state within a simulated environment (based on your Python code).
+Raspberry Pi Controls Heater: Based on the robot's updated position in the simulation, the Raspberry Pi controls a physical heater (a Peltier powered by a Keithley source via usbtmc). A DS18B20 temperature sensor provides feedback to the Raspberry Pi, allowing for temperature regulation of the physical environment to match the simulation.
