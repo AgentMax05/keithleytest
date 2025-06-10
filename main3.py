@@ -56,7 +56,7 @@ STEP_INTERVAL = 4.0 # Example: Aim for a step every 4 seconds
 TOTAL_STEPS = 100 # Example: Run for 100 steps, or None for infinite
 
 # PID Control Parameters
-TARGET_TEMPERATURE = 110.0  # Target temperature in Celsius
+TARGET_TEMPERATURE = 30.0  # Target temperature in Celsius
 PID_SAMPLE_TIME = 0.5  # PID control loop sample time in seconds
 PID_KP = 1.2  # Proportional gain
 PID_KI = 0.01  # Integral gain
