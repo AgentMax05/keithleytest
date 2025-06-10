@@ -140,11 +140,19 @@ def voltage_measurement_thread(keithley, stop_event):
     try:
         while not stop_event.is_set():
             try:
+                # Try to read voltage with timeout
+                keithley.timeout = 2000  # 2 second timeout
                 voltage = float(keithley.ask(":MEAS:VOLT?"))
                 voltage_queue.put(voltage)
                 time.sleep(0.1)  # Small delay to prevent overwhelming the instrument
             except UsbtmcException as e:
                 print(f"Error reading voltage: {e}")
+                # Try to reset the connection
+                try:
+                    keithley.write("*RST")
+                    keithley.write(":OUTP OFF")
+                except:
+                    pass
                 time.sleep(1)  # Longer delay on error
             except Exception as e:
                 print(f"Unexpected error in voltage measurement: {e}")
@@ -164,7 +172,8 @@ def temperature_control_thread(keithley, stop_event):
                 # Calculate control signal
                 control_signal = pid(current_temp)
                 
-                # Apply control signal to heater
+                # Apply control signal to heater with timeout
+                keithley.timeout = 2000  # 2 second timeout
                 keithley.write(f":SOUR:VOLT {control_signal}")
                 if control_signal > 0:
                     keithley.write(":OUTP ON")
@@ -177,6 +186,12 @@ def temperature_control_thread(keithley, stop_event):
                 time.sleep(PID_SAMPLE_TIME)
             except UsbtmcException as e:
                 print(f"Error in temperature control: {e}")
+                # Try to reset the connection
+                try:
+                    keithley.write("*RST")
+                    keithley.write(":OUTP OFF")
+                except:
+                    pass
                 time.sleep(1)
             except Exception as e:
                 print(f"Unexpected error in temperature control: {e}")
@@ -292,14 +307,29 @@ def main():
     keithley = None
     try:
         keithley = usbtmc.Instrument(KEITHLEY_VENDOR_ID, KEITHLEY_PRODUCT_ID)
+        keithley.timeout = 2000  # 2 second timeout
         print(f"Keithley instrument connected (VID: {hex(KEITHLEY_VENDOR_ID)}, PID: {hex(KEITHLEY_PRODUCT_ID)}).")
         
-        # Query identity
-        try:
-            idn = keithley.ask("*IDN?")
-            print(f"Instrument Identification: {idn.strip()}")
-        except Exception as e:
-            print(f"Error querying instrument ID: {e}")
+        # Query identity with retry
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                idn = keithley.ask("*IDN?")
+                print(f"Instrument Identification: {idn.strip()}")
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    print(f"Error querying instrument ID after {max_retries} attempts: {e}")
+                else:
+                    print(f"Retrying instrument ID query... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(1)
+        
+        # Initialize instrument
+        keithley.write("*RST")  # Reset to default settings
+        keithley.write(":OUTP OFF")  # Ensure output is off initially
+        keithley.write(":SOUR:VOLT 0")  # Set initial voltage to 0
+        keithley.write(":SENS:VOLT:PROT 5")  # Set voltage protection limit to 5V
+        keithley.write(":SENS:CURR:PROT 1")  # Set current protection limit to 1A
             
     except Exception as e:
         print(f"Error initializing Keithley: {e}")
