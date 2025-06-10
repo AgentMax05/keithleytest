@@ -128,9 +128,6 @@ class Robot:
 def voltage_measurement_thread(keithley, stop_event):
     """Continuously measures voltage and detects threshold crossings."""
     global last_action
-    consecutive_errors = 0
-    max_consecutive_errors = 3
-    
     try:
         while not stop_event.is_set():
             try:
@@ -139,9 +136,6 @@ def voltage_measurement_thread(keithley, stop_event):
                 voltage = float(keithley.ask(":MEAS:VOLT?"))
                 voltage_queue.put(voltage)
                 
-                # Reset error counter on successful read
-                consecutive_errors = 0
-                
                 # Check for threshold crossing
                 current_action = 1 if voltage > ACTION_VOLTAGE_THRESHOLD else 0
                 if last_action is not None and current_action != last_action:
@@ -149,33 +143,17 @@ def voltage_measurement_thread(keithley, stop_event):
                 last_action = current_action
                 
                 time.sleep(0.01)  # Minimal delay
-                
-            except (UsbtmcException, IOError) as e:
-                consecutive_errors += 1
-                print(f"Error reading voltage (attempt {consecutive_errors}/{max_consecutive_errors}): {e}")
-                
-                if consecutive_errors >= max_consecutive_errors:
-                    print("Too many consecutive errors. Attempting to reconnect...")
-                    try:
-                        # Try to reset the connection
-                        keithley.write("*RST")
-                        keithley.write(":OUTP OFF")
-                        time.sleep(1)  # Give it time to reset
-                        
-                        # Test the connection
-                        keithley.ask("*IDN?")
-                        print("Successfully reconnected to Keithley")
-                        consecutive_errors = 0
-                    except Exception as reconnect_error:
-                        print(f"Failed to reconnect: {reconnect_error}")
-                        time.sleep(2)  # Longer delay before next attempt
-                else:
-                    time.sleep(0.5)  # Short delay before retry
-                    
+            except UsbtmcException as e:
+                print(f"Error reading voltage: {e}")
+                try:
+                    keithley.write("*RST")
+                    keithley.write(":OUTP OFF")
+                except:
+                    pass
+                time.sleep(0.5)
             except Exception as e:
                 print(f"Unexpected error in voltage measurement: {e}")
                 time.sleep(0.5)
-                
     except Exception as e:
         print(f"Fatal error in voltage measurement thread: {e}")
 
@@ -225,7 +203,6 @@ def main_control_loop(keithley, robot, field, stop_event):
     step = 0
     start_time_of_step = time.time()
     start_simulated_temperature = field.temperature(robot.state.x, robot.state.y)
-    last_voltage = 0.0  # Keep track of last valid voltage reading
 
     try:
         while not stop_event.is_set():
@@ -239,16 +216,13 @@ def main_control_loop(keithley, robot, field, stop_event):
                 print(f"Step triggered by: {'Threshold crossing' if threshold_crossed else 'Time interval'}")
 
                 # Get voltage and determine action
-                voltage = last_voltage  # Default to last valid reading
                 if not voltage_queue.empty():
-                    try:
-                        voltage = voltage_queue.get()
-                        last_voltage = voltage  # Update last valid reading
-                    except queue.Empty:
-                        print("Warning: Using last valid voltage reading")
-                
-                current_action = 1 if voltage > ACTION_VOLTAGE_THRESHOLD else 0
-                print(f"Measured voltage: {voltage:.4f} V -> Action: {'arc' if current_action == 1 else 'turn and arc'}")
+                    voltage = voltage_queue.get()
+                    current_action = 1 if voltage > ACTION_VOLTAGE_THRESHOLD else 0
+                    print(f"Measured voltage: {voltage:.4f} V -> Action: {'arc' if current_action == 1 else 'turn and arc'}")
+                else:
+                    print("No voltage measurement available")
+                    continue
 
                 # Record initial state and temperature BEFORE movement
                 start_pos_x, start_pos_y = robot.state.x, robot.state.y
@@ -361,140 +335,100 @@ def log_step_data(step, start_time, voltage, action, start_temp, end_temp,
 def main():
     print("Initializing hardware and simulation...")
     
+    # Set number of steps (can be changed before running)
+    set_simulation_steps(100)  # Set to None for infinite operation
+    
+    # Initialize temperature sensor
+    global device_file
+    device_file = setup_temperature_sensor()
+    
+    # Initialize Keithley
+    keithley = None
     try:
-        # Set number of steps (can be changed before running)
-        set_simulation_steps(100)  # Set to None for infinite operation
-        print("Step count initialized")
+        keithley = usbtmc.Instrument(KEITHLEY_VENDOR_ID, KEITHLEY_PRODUCT_ID)
+        keithley.timeout = 2000
+        print(f"Keithley instrument connected (VID: {hex(KEITHLEY_VENDOR_ID)}, PID: {hex(KEITHLEY_PRODUCT_ID)}).")
         
-        # Initialize temperature sensor
-        global device_file
-        try:
-            device_file = setup_temperature_sensor()
-            print("Temperature sensor initialized")
-        except Exception as e:
-            print(f"Error initializing temperature sensor: {e}")
-            sys.exit(1)
-        
-        # Initialize Keithley
-        keithley = None
-        try:
-            print("Attempting to connect to Keithley instrument...")
-            keithley = usbtmc.Instrument(KEITHLEY_VENDOR_ID, KEITHLEY_PRODUCT_ID)
-            keithley.timeout = 2000
-            print(f"Keithley instrument connected (VID: {hex(KEITHLEY_VENDOR_ID)}, PID: {hex(KEITHLEY_PRODUCT_ID)}).")
+        # Initialize instrument
+        keithley.write("*RST")
+        keithley.write(":OUTP OFF")
+        keithley.write(":SOUR:VOLT 0")
+        keithley.write(":SENS:VOLT:PROT 5")
+        keithley.write(":SENS:CURR:PROT 1")
             
-            # Test communication with Keithley
-            print("Testing Keithley communication...")
-            try:
-                idn = keithley.ask("*IDN?")
-                print(f"Instrument Identification: {idn.strip()}")
-            except Exception as e:
-                print(f"Warning: Could not query instrument ID: {e}")
-            
-            # Initialize instrument
-            print("Initializing Keithley settings...")
-            keithley.write("*RST")
-            keithley.write(":OUTP OFF")
-            keithley.write(":SOUR:VOLT 0")
-            keithley.write(":SENS:VOLT:PROT 5")
-            keithley.write(":SENS:CURR:PROT 1")
-            print("Keithley settings initialized")
-                
-        except Exception as e:
-            print(f"Error initializing Keithley: {e}")
-            sys.exit(1)
-
-        # Initialize simulation
-        print("Initializing simulation...")
-        try:
-            field = TemperatureField.linear(size=100, base=20, grad_x=1, grad_y=0)
-            initial_state = RobotState(x=10.0, y=10.0, heading=0.0)
-            robot = Robot(state=initial_state, step_length=1, arc_angle_degrees=1, turn_angle=45)
-            print("Robot and field initialized")
-        except Exception as e:
-            print(f"Error initializing simulation: {e}")
-            sys.exit(1)
-        
-        # Initialize PID controller
-        print("Initializing PID controller...")
-        try:
-            global pid
-            pid = PID(Kp=PID_KP, Ki=PID_KI, Kd=PID_KD)
-            pid.output_limits = PID_OUTPUT_LIMITS
-            pid.setpoint = field.temperature(robot.state.x, robot.state.y)
-            print("PID controller initialized")
-        except Exception as e:
-            print(f"Error initializing PID controller: {e}")
-            sys.exit(1)
-        
-        print("All systems initialized successfully.")
-        print("Starting main control loop...")
-
-        # Create and start threads
-        threads = []
-        try:
-            # Start voltage measurement thread
-            print("Starting voltage measurement thread...")
-            voltage_thread = threading.Thread(
-                target=voltage_measurement_thread,
-                args=(keithley, stop_event)
-            )
-            threads.append(voltage_thread)
-            voltage_thread.start()
-            print("Voltage measurement thread started")
-
-            # Start temperature control thread
-            print("Starting temperature control thread...")
-            temp_thread = threading.Thread(
-                target=temperature_control_thread,
-                args=(keithley, stop_event)
-            )
-            threads.append(temp_thread)
-            temp_thread.start()
-            print("Temperature control thread started")
-
-            # Run main control loop
-            print("Entering main control loop...")
-            main_control_loop(keithley, robot, field, stop_event)
-
-        except KeyboardInterrupt:
-            print("\nProgram interrupted by user.")
-            stop_event.set()
-        except Exception as e:
-            print(f"Fatal error in main program: {e}")
-            stop_event.set()
-        finally:
-            # Wait for threads to finish
-            print("Waiting for threads to finish...")
-            for thread in threads:
-                thread.join(timeout=5.0)
-
-            # Cleanup
-            print("Cleaning up...")
-            try:
-                if keithley is not None:
-                    keithley.write(":OUTP OFF")
-                    print("Keithley output turned off.")
-            except Exception as e:
-                print(f"Error during cleanup: {e}")
-
-            # Save logged data
-            if log_data:
-                try:
-                    log_df = pd.DataFrame(log_data)
-                    timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-                    filename = f"robot_simulation_log_usbtmc_{timestamp_str}.csv"
-                    log_df.to_csv(filename, index=False)
-                    print(f"Data saved to {filename}")
-                except Exception as e:
-                    print(f"Error saving log data: {e}")
-            else:
-                print("No data to save.")
-
-            print("Program finished.")
     except Exception as e:
-        print(f"Critical error in main program: {e}")
+        print(f"Error initializing Keithley: {e}")
         sys.exit(1)
+
+    # Initialize simulation
+    field = TemperatureField.linear(size=100, base=20, grad_x=1, grad_y=0)
+    initial_state = RobotState(x=10.0, y=10.0, heading=0.0)
+    robot = Robot(state=initial_state, step_length=1, arc_angle_degrees=1, turn_angle=45)
+    
+    # Initialize PID controller
+    global pid
+    pid = PID(Kp=PID_KP, Ki=PID_KI, Kd=PID_KD)
+    pid.output_limits = PID_OUTPUT_LIMITS
+    pid.setpoint = field.temperature(robot.state.x, robot.state.y)
+    
+    print("Simulation initialized.")
+
+    # Create and start threads
+    threads = []
+    try:
+        # Start voltage measurement thread
+        voltage_thread = threading.Thread(
+            target=voltage_measurement_thread,
+            args=(keithley, stop_event)
+        )
+        threads.append(voltage_thread)
+        voltage_thread.start()
+
+        # Start temperature control thread
+        temp_thread = threading.Thread(
+            target=temperature_control_thread,
+            args=(keithley, stop_event)
+        )
+        threads.append(temp_thread)
+        temp_thread.start()
+
+        # Run main control loop
+        main_control_loop(keithley, robot, field, stop_event)
+
+    except KeyboardInterrupt:
+        print("\nProgram interrupted by user.")
+        stop_event.set()
+    except Exception as e:
+        print(f"Fatal error in main program: {e}")
+        stop_event.set()
+    finally:
+        # Wait for threads to finish
+        for thread in threads:
+            thread.join(timeout=5.0)
+
+        # Cleanup
+        print("Cleaning up...")
+        try:
+            if keithley is not None:
+                keithley.write(":OUTP OFF")
+                print("Keithley output turned off.")
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+
+        # Save logged data
+        if log_data:
+            try:
+                log_df = pd.DataFrame(log_data)
+                timestamp_str = time.strftime("%Y%m%d_%H%M%S")
+                filename = f"robot_simulation_log_usbtmc_{timestamp_str}.csv"
+                log_df.to_csv(filename, index=False)
+                print(f"Data saved to {filename}")
+            except Exception as e:
+                print(f"Error saving log data: {e}")
+        else:
+            print("No data to save.")
+
+        print("Program finished.")
 
 if __name__ == "__main__":
     main()
