@@ -348,7 +348,7 @@ try: # Wrap the main loop in a try block for cleanup
                 'Start Temperature': start_simulated_temperature_this_step,
                 'End Temperature': end_simulated_temperature_this_step,
                 'Start Position X': start_pos_x_this_step,
-                'Start Position Y': start_pos_pos_y_this_step, # Fix typo here
+                'Start Position Y': start_pos_y_this_step, # Fix typo here
                 'Start Heading': start_heading_this_step,
                 'End Position X': end_pos_x_this_step,
                 'End Position Y': end_pos_y_this_step,
