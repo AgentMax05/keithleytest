@@ -99,13 +99,16 @@ def setup_temperature_sensor():
 
 def read_temperature(device_file):
     """Read temperature from sensor."""
-    with open(device_file, 'r') as f:
-        lines = f.readlines()
-        if lines[0].strip()[-3:] != 'YES':
-            return None
-        equals_pos = lines[1].find('t=')
-        if equals_pos != -1:
-            return float(lines[1][equals_pos+2:]) / 1000.0
+    try:
+        with open(device_file, 'r') as f:
+            lines = f.readlines()
+            if lines[0].strip()[-3:] != 'YES':
+                return None
+            equals_pos = lines[1].find('t=')
+            if equals_pos != -1:
+                return float(lines[1][equals_pos+2:]) / 1000.0
+    except:
+        return None
     return None
 
 def initialize_keithley():
@@ -287,10 +290,12 @@ def main_control_loop(robot: Robot, temp_field: TemperatureField, keithley: usbt
                      params: dict, log_data: List[dict], device_file: str) -> None:
     """Main control loop for robot movement and data collection"""
     try:
-        # Configure Keithley for faster communication
+        # Configure Keithley for fastest communication
         keithley.timeout = 10  # 0.01 second timeout
-        keithley.write(":SENSE:VOLT:DC:NPLC 0.1")  # Faster voltage readings
+        keithley.write(":SENSE:VOLT:DC:NPLC 0.01")  # Even faster voltage readings
         keithley.write(":SENSE:VOLT:DC:AVER:COUNT 1")  # No averaging
+        keithley.write(":SENSE:VOLT:DC:AVER:TCON REP")  # No time constant
+        keithley.write(":SENSE:VOLT:DC:AVER:STAT OFF")  # Disable averaging
         
         # Record initial state
         initial_temp = temp_field.temperature(robot.state.x, robot.state.y)
@@ -473,6 +478,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
