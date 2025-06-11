@@ -25,6 +25,7 @@ MAX_CURRENT = 2.0  # Maximum current limit
 MAX_TEMP = 100.0   # Maximum temperature limit
 MIN_TEMP = 0.0     # Minimum temperature limit
 INITIAL_WAIT_TIME = 20.0  # Initial wait time before threshold detection in seconds
+TEST_MODE = True  # Set to True to skip threshold detection
 
 # ============== SIMULATION CLASSES ==============
 class TemperatureField:
@@ -297,18 +298,24 @@ def main_control_loop(robot: Robot, temp_field: TemperatureField, keithley: usbt
                           robot.state.heading, robot.state.heading,
                           initial_actual_temp)
 
-        # Wait for initial threshold crossing
-        try:
-            initial_voltage = wait_for_initial_threshold(keithley)
-            
-            # Wait for initial duration after threshold detection
+        if not TEST_MODE:
+            # Wait for initial threshold crossing
+            try:
+                initial_voltage = wait_for_initial_threshold(keithley)
+                
+                # Wait for initial duration after threshold detection
+                print("\n" + "="*50)
+                print(f"Threshold detected! Waiting for initial duration of {params['initial_duration']} seconds...")
+                print("="*50)
+                time.sleep(params['initial_duration'])
+                
+            except KeyboardInterrupt:
+                return
+        else:
             print("\n" + "="*50)
-            print(f"Threshold detected! Waiting for initial duration of {params['initial_duration']} seconds...")
+            print("TEST MODE: Skipping threshold detection")
             print("="*50)
-            time.sleep(params['initial_duration'])
-            
-        except KeyboardInterrupt:
-            return
+            time.sleep(1)  # Brief pause for visibility
 
         # Main control loop
         for step in range(1, params['num_steps'] + 1):
@@ -445,4 +452,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
