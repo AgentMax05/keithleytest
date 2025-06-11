@@ -99,19 +99,14 @@ def setup_temperature_sensor():
 
 def read_temperature(device_file):
     """Read temperature from sensor."""
-    def read_raw():
-        with open(device_file, 'r') as f:
-            return f.readlines()
-    
-    lines = read_raw()
-    while lines[0].strip()[-3:] != 'YES':
-        time.sleep(0.2)
-        lines = read_raw()
-    
-    equals_pos = lines[1].find('t=')
-    if equals_pos != -1:
-        temp_string = lines[1][equals_pos+2:]
-        return float(temp_string) / 1000.0
+    with open(device_file, 'r') as f:
+        lines = f.readlines()
+        if lines[0].strip()[-3:] != 'YES':
+            return None
+        equals_pos = lines[1].find('t=')
+        if equals_pos != -1:
+            return float(lines[1][equals_pos+2:]) / 1000.0
+    return None
 
 def initialize_keithley():
     """Initialize and configure the Keithley instrument."""
@@ -292,6 +287,11 @@ def main_control_loop(robot: Robot, temp_field: TemperatureField, keithley: usbt
                      params: dict, log_data: List[dict], device_file: str) -> None:
     """Main control loop for robot movement and data collection"""
     try:
+        # Configure Keithley for faster communication
+        keithley.timeout = 10  # 0.01 second timeout
+        keithley.write(":SENSE:VOLT:DC:NPLC 0.1")  # Faster voltage readings
+        keithley.write(":SENSE:VOLT:DC:AVER:COUNT 1")  # No averaging
+        
         # Record initial state
         initial_temp = temp_field.temperature(robot.state.x, robot.state.y)
         initial_actual_temp = read_temperature(device_file)
@@ -323,7 +323,7 @@ def main_control_loop(robot: Robot, temp_field: TemperatureField, keithley: usbt
             print("\n" + "="*50)
             print("TEST MODE: Skipping threshold detection")
             print("="*50)
-            time.sleep(1)  # Brief pause for visibility
+            time.sleep(0.5)
 
         # Main control loop
         for step in range(1, params['num_steps'] + 1):
@@ -473,6 +473,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
