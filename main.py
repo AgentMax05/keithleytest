@@ -27,6 +27,10 @@ MIN_TEMP = 0.0     # Minimum temperature limit
 INITIAL_WAIT_TIME = 20.0  # Initial wait time before threshold detection in seconds
 TEST_MODE = True  # Set to True to skip threshold detection
 
+# Temperature Control Configuration
+VOLTAGE_TO_TEMP_SLOPE = 0.1  # Temperature change per volt
+VOLTAGE_TO_TEMP_OFFSET = 5.0  # Base voltage at 0°C
+
 # ============== SIMULATION CLASSES ==============
 class TemperatureField:
     """Simulates a temperature field in 2D space."""
@@ -280,6 +284,10 @@ def wait_for_initial_threshold(keithley: usbtmc.Instrument) -> float:
             print("\nProgram stopped by user")
             raise
 
+def temperature_to_voltage(temp: float) -> float:
+    """Convert temperature to voltage using the mapping: voltage = slope * temp + offset"""
+    return VOLTAGE_TO_TEMP_SLOPE * temp + VOLTAGE_TO_TEMP_OFFSET
+
 def main_control_loop(robot: Robot, temp_field: TemperatureField, keithley: usbtmc.Instrument,
                      params: dict, log_data: List[dict], device_file: str) -> None:
     """Main control loop for robot movement and data collection"""
@@ -350,6 +358,18 @@ def main_control_loop(robot: Robot, temp_field: TemperatureField, keithley: usbt
             end_heading = robot.state.heading
             actual_temp = read_temperature(device_file)
 
+            # Set heater voltage based on field temperature
+            heater_voltage = 5.0 + 0.1 * end_temp
+            try:
+                keithley.write(f":SOUR:VOLT {heater_voltage}")
+                keithley.write(":OUTP ON")
+                print(f"\nTemperature Control:")
+                print(f"Current Temperature: {actual_temp:.1f}°C")
+                print(f"Field Temperature: {end_temp:.1f}°C")
+                print(f"Heater Voltage: {heater_voltage:.2f}V")
+            except UsbtmcException as e:
+                print(f"Error controlling heater: {e}")
+
             # Log and print step data
             action = "arc" if voltage > 0.5 else "turn+arc"
             log_step_data(log_data, step, voltage, action,
@@ -403,7 +423,8 @@ def main_control_loop(robot: Robot, temp_field: TemperatureField, keithley: usbt
             'temp_tolerance': params['temp_tolerance'],
             'arc_duration': params['arc_duration'],
             'turn_arc_duration': params['turn_arc_duration'],
-            'initial_duration': params['initial_duration']
+            'initial_duration': params['initial_duration'],
+            'test_mode': TEST_MODE
         }])
         params_df.to_csv(f'robot_params_{timestamp}.csv', index=False)
         print(f"Parameters saved to robot_params_{timestamp}.csv")
@@ -452,5 +473,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
