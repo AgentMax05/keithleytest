@@ -1,0 +1,66 @@
+import board
+import digitalio
+import time
+import adafruit_max31856
+import csv
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
+
+def format_hhmmss(seconds):
+    """Convert seconds to HH:MM:SS format"""
+    hrs = int(seconds // 3600)
+    mins = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    return f"{hrs:02}:{mins:02}:{secs:02}"
+
+# Setup SPI and MAX31856
+spi = board.SPI()
+cs = digitalio.DigitalInOut(board.D5)
+thermocouple = adafruit_max31856.MAX31856(spi, cs)
+
+# Prepare CSV logging
+csv_filename = "temperature_log.csv"
+with open(csv_filename, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(["Time (s)", "Temperature (C)"])  # CSV header
+
+start_time = time.time()
+times = []
+temps = []
+
+try:
+    while True:
+        elapsed = time.time() - start_time
+        temp = thermocouple.temperature
+
+        # Store data
+        times.append(elapsed)
+        temps.append(temp)
+
+        # Save to CSV
+        with open(csv_filename, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([f"{elapsed:.2f}", f"{temp:.2f}"])
+
+        # Print with HH:MM:SS display
+        print(f"Time: {format_hhmmss(elapsed)} | Temp: {temp:.2f} °C")
+
+        time.sleep(5)
+
+except KeyboardInterrupt:
+    print("\nMeasurement stopped. Saving PDF plot...")
+
+    # Save PDF plot
+    pdf_filename = "temperature_plot.pdf"
+    with PdfPages(pdf_filename) as pdf:
+        plt.figure(figsize=(10, 6))
+        plt.plot(times, temps, marker='o', linestyle='-')
+        plt.title("Temperature vs Time")
+        plt.xlabel("Time (s)")
+        plt.ylabel("Temperature (°C)")
+        plt.grid(True)
+        pdf.savefig()
+        plt.close()
+
+    print(f"CSV saved as {csv_filename}")
+    print(f"PDF saved as {pdf_filename}")
