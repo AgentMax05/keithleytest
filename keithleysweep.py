@@ -2,23 +2,11 @@ import time
 
 usbtmc_device = "/dev/usbtmc0"
 
-def query_cmd(cmd):
-    """Send a query and read the result back correctly."""
-    with open(usbtmc_device, 'w') as f_w, open(usbtmc_device, 'r') as f_r:
-        f_w.write(cmd + '\n')
-        f_w.flush()
-        time.sleep(0.1)  # Short pause to let it execute
-        return f_r.read().strip()
-
 def write_cmd(cmd):
     with open(usbtmc_device, 'w') as f:
         f.write(cmd + '\n')
     print(f"wrote: {cmd}")
     #time.sleep(1)
-
-def read_resp():
-    with open(usbtmc_device, 'r') as f:
-        return f.read()
 
 # --- Calculate number of steps ---
 v_start = 0.0
