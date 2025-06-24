@@ -93,7 +93,7 @@ def main():
         # Define voltage range
         # voltage_range = [float(i) / 10.0 for i in range(-5, 6, 1)]
         # voltage_range = [round(v, 2) for v in range(-5, 6, 1)] # -1V to 1V in 0.1V increments
-        voltage_range = [float(i) / -10.0 for i in range(0, 30, 2)]
+        voltage_range = [float(i) / 10.0 for i in range(0, 31, 2)]
         print("Starting voltage sweep and temperature measurement...")
 
         # Sweep through voltage range
