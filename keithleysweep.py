@@ -45,8 +45,6 @@ write_cmd("INIT")
 # Wait for sweep completion using *OPC? (optional)
 time.sleep(points * delay_per_step)
 
-query_cmd("*OPC?")
-
 write_cmd(":READ? \"SOUR\"")
 print(f"read voltage: {read_resp()}")
 
